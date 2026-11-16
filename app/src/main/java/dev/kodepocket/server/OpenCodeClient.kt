@@ -173,7 +173,7 @@ class OpenCodeClient(
     private suspend fun post(path: String, body: String): String =
         send(HttpMethod.Post, path, body)
 
-    private suspend fun send(method: HttpMethod, path: String, body: String?): String {
+    private suspend fun send(method: HttpMethod, path: String, body: String? = null): String {
         val response = http.request("$root$path") {
             this.method = method
             header(HttpHeaders.Authorization, authorization)
