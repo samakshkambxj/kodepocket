@@ -34,6 +34,15 @@ jobs:
             "platforms;android-37.0" \
             "build-tools;37.0.0"
 
+      - name: Cache opencode runtime
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/jniLibs
+          key: opencode-runtime-${{ hashFiles('scripts/fetch-runtime.sh') }}
+
+      - name: Fetch opencode runtime
+        run: bash ./scripts/fetch-runtime.sh
+
       - name: Build and verify
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest lintDebug
 
