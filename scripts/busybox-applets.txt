@@ -1,0 +1,18 @@
+# BusyBox applets that KodePocket exposes on PATH.
+#
+# The agent gets one compact multi-call binary instead of a dozen GNU
+# packages. Applets that need root, network daemons, or filesystem tools are
+# deliberately left out, and so are names that the real bash/git/rg/curl
+# override. Generated from busybox 1.38.0 (`busybox --list`) and trimmed.
+[ [[ ar arch ascii ash awk base32 base64 basename bc bunzip2 bzcat bzip2
+cal cat chgrp chmod chown cksum clear cmp comm cp cpio crc32 cut date dc dd
+df diff dirname dos2unix du echo ed egrep env expand expr factor false fgrep
+find flock fold free fuser getopt grep groups gunzip gzip hd head hexdump
+hostname id install ionice iostat kill killall less link ln ls lsof lzcat lzma
+lzop md5sum mkdir mkfifo mktemp more mv nl nohup od paste patch pgrep pidof
+pkill pmap printenv printf ps pstree pwd readlink realpath renice reset rev rm
+rmdir sed seq sha1sum sha256sum sha384sum sha512sum sh shred shuf sleep sort
+split stat strings stty sum sv sync tac tail tar tee test time timeout top
+touch tr tree true truncate tsort tty uname uncompress unexpand uniq unix2dos
+unlink unlzma unlzop unxz unzip uptime usleep uudecode uuencode uuidgen vi
+vmstat watch wc wget which whoami xargs xxd xz xzcat yes zcat

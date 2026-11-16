@@ -69,7 +69,9 @@ android {
             // packaging extracts it to nativeLibraryDir, the only app-owned
             // path Android 10+ lets the app execute.
             useLegacyPackaging = true
-            keepDebugSymbols += "**/libopencode*.so"
+            // Every bundled ELF is a prebuilt Termux or Bun binary. Keep the
+            // symbols so AGP never rewrites the ones it does not understand.
+            keepDebugSymbols += "**/*.so"
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

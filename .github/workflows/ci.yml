@@ -34,14 +34,26 @@ jobs:
             "platforms;android-37.0" \
             "build-tools;37.0.0"
 
-      - name: Cache opencode runtime
+      - name: Install archive tools
+        run: |
+          if ! command -v ar > /dev/null || ! command -v xz > /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends binutils xz-utils
+          fi
+
+      - name: Cache bundled binaries
         uses: actions/cache@v4
         with:
-          path: app/src/main/jniLibs
-          key: opencode-runtime-${{ hashFiles('scripts/fetch-runtime.sh') }}
+          path: |
+            app/src/main/jniLibs
+            app/src/main/assets/toolchain
+          key: bundled-${{ hashFiles('scripts/fetch-runtime.sh', 'scripts/fetch-toolchain.sh', 'scripts/busybox-applets.txt') }}
 
       - name: Fetch opencode runtime
         run: bash ./scripts/fetch-runtime.sh
+
+      - name: Fetch toolchain
+        run: bash ./scripts/fetch-toolchain.sh
 
       - name: Build and verify
         run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest lintDebug
