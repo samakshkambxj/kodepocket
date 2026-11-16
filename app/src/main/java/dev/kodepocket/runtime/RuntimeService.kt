@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.Manifest
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -99,6 +101,16 @@ class RuntimeService : Service() {
     }
 
     private fun notify(state: RuntimeState) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // The user declined the notification permission. The foreground
+            // service still runs; Android simply hides its notification.
+            return
+        }
         runCatching {
             NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification(state))
         }.onFailure { Log.w(TAG, "Could not update the notification", it) }
