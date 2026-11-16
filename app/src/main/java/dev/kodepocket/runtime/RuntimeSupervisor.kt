@@ -6,6 +6,7 @@ import android.util.Log
 import java.net.HttpURLConnection
 import java.net.Proxy
 import java.net.URL
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -169,11 +170,60 @@ class RuntimeSupervisor(context: Context) {
         builder.redirectOutput(ProcessBuilder.Redirect.appendTo(environment.logFile))
         builder.environment().clear()
         builder.environment().putAll(environment.variables(password))
-        // The runtime links against libopencode-crhandler.so through a relative
-        // RUNPATH. Both libraries live in nativeLibraryDir, so point the linker
-        // there explicitly.
-        builder.environment()["LD_LIBRARY_PATH"] = binary.parentFile?.absolutePath.orEmpty()
         return builder.start()
+    }
+
+    /**
+     * Runs the bundled tools once and returns their versions. This is the only
+     * signal the UI has that the toolchain links and executes on this device,
+     * because `nativeLibraryDir` and the symlink farm cannot be exercised
+     * anywhere but on the phone.
+     */
+    suspend fun checkToolchain(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val manifest = environment.prepare()
+            val bash = environment.toolchain.bash
+            if (!bash.isFile) throw IllegalStateException("bash is missing from the toolchain")
+
+            val script = listOf(
+                "echo \"bash \$BASH_VERSION\"",
+                "git --version",
+                "rg --version | head -1",
+                "busybox | head -1",
+                "curl --version | head -1",
+                "echo \"sh -> \$(command -v sh)\"",
+            ).joinToString("\n")
+
+            val builder = ProcessBuilder(bash.absolutePath, "-c", script)
+                .directory(environment.workDir)
+                .redirectErrorStream(true)
+            builder.environment().clear()
+            builder.environment().putAll(environment.variables(PROBE_PASSWORD))
+            val process = builder.start()
+
+            val finished = process.waitFor(TOOLCHAIN_TIMEOUT_S, TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+
+            val code = if (finished) process.exitValue() else -1
+            if (code != 0) {
+                throw IllegalStateException(
+                    if (output.isEmpty()) "The toolchain exited with code $code." else output,
+                )
+            }
+            buildString {
+                append(manifest.version)
+                append(" · ")
+                append(manifest.bin.size)
+                append(" tools · ")
+                append(manifest.applets.size)
+                append(" applets")
+                if (output.isNotEmpty()) {
+                    append('\n')
+                    append(output)
+                }
+            }
+        }
     }
 
     private suspend fun awaitHealthy(
@@ -276,5 +326,9 @@ class RuntimeSupervisor(context: Context) {
         const val START_TIMEOUT_MS = 120_000L
         const val STOP_TIMEOUT_MS = 5_000L
         const val PROBE_INTERVAL_MS = 500L
+        const val TOOLCHAIN_TIMEOUT_S = 30L
+
+        /** Placeholder credential for the self-check; it never reaches a server. */
+        const val PROBE_PASSWORD = "self-check"
     }
 }

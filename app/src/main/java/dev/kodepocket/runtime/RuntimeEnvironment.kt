@@ -9,7 +9,7 @@ import java.security.SecureRandom
 
 /**
  * Owns every path and environment variable the runtime is allowed to see.
- * Nothing outside app-private storage is exposed in M1.
+ * Nothing outside app-private storage is exposed.
  */
 class RuntimeEnvironment(private val context: Context) {
 
@@ -24,12 +24,16 @@ class RuntimeEnvironment(private val context: Context) {
     val logFile = File(logDir, "runtime.log")
     val dbFile = File(dataDir, "opencode.db")
 
+    val toolchain = Toolchain(context)
+
     val binary: File
         get() = File(context.applicationInfo.nativeLibraryDir, "libopencode.so")
 
-    fun prepare() {
+    /** Creates the sandbox and materializes the toolchain symlink farm. */
+    fun prepare(): Toolchain.Manifest {
         listOf(home, tmp, workDir, configDir, dataDir, cacheDir, stateDir, logDir)
             .forEach { it.mkdirs() }
+        return toolchain.prepare()
     }
 
     fun freePort(): Int =
@@ -56,7 +60,23 @@ class RuntimeEnvironment(private val context: Context) {
         put("OPENCODE_PASSWORD", password)
         put("OPENCODE_DISABLE_AUTOUPDATE", "1")
         put("OPENCODE_LOG_LEVEL", "info")
-        put("PATH", "${context.applicationInfo.nativeLibraryDir}:/system/bin:/system/xbin")
+        // bash, git, rg, curl and the busybox applets all live in the farm;
+        // nativeLibraryDir stays on PATH so the runtime can spawn its helper.
+        put("PATH", "${toolchain.binDir.path}:${context.applicationInfo.nativeLibraryDir}:/system/bin:/system/xbin")
+        // The loader looks for sonames such as libz.so.1, which the farm
+        // provides as links to the sanitized names in nativeLibraryDir.
+        put("LD_LIBRARY_PATH", "${toolchain.libDir.path}:${context.applicationInfo.nativeLibraryDir}")
+        put("SHELL", toolchain.bash.path)
+        put("TERMINFO", toolchain.terminfoDir.path)
+        put("SSL_CERT_FILE", toolchain.caBundle.path)
+        put("CURL_CA_BUNDLE", toolchain.caBundle.path)
+        put("GIT_SSL_CAINFO", toolchain.caBundle.path)
+        put("GIT_EXEC_PATH", toolchain.gitExecDir.path)
+        put("GIT_TEMPLATE_DIR", toolchain.templateDir.path)
+        // Without a pager override a `git log` inside a PTY would block.
+        put("GIT_PAGER", "cat")
+        put("PAGER", "cat")
+        put("GIT_TERMINAL_PROMPT", "0")
         put("LANG", "en_US.UTF-8")
         put("TERM", "xterm-256color")
     }
