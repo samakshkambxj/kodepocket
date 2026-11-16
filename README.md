@@ -11,8 +11,9 @@ no PRoot, no remote server.
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
-> **Status:** early scaffold. The app shell and Material 3 Expressive theme are
-> in place. The bundled runtime is the next milestone.
+> **Status:** M1. The app bundles the opencode runtime, executes it from
+> `nativeLibraryDir`, and supervises it with a foreground service. Chat and
+> tool approvals are the next milestones.
 
 ## Why
 
@@ -30,20 +31,31 @@ Compose UI ──HTTP/SSE──▶ opencode serve (127.0.0.1, Basic auth)
 
 The opencode binary is shipped inside the APK as a native library, because
 Android 10+ forbids executing files from app-writable storage. A foreground
-service owns the process; the UI talks to it over loopback.
+service owns the process, keeps a wake lock during long runs, and shows an
+ongoing notification with a stop action. The app's network security config
+permits cleartext only to `127.0.0.1`/`localhost`, and each launch gets a fresh
+random Basic-auth password.
+
+The runtime also needs a small helper (`libopencode-crhandler.so`). Both ELFs
+are extracted from `jniLibs`, and the supervisor points `LD_LIBRARY_PATH` at
+`nativeLibraryDir` so the linker resolves the helper.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture, milestones, risks,
 and commit conventions.
 
 ## Build
 
-Requirements: JDK 17+, Android SDK 37, and an arm64 device for anything beyond
-UI work.
+Requirements: JDK 17+, Android SDK 37, `curl`, `xz`, and an arm64 device for
+anything beyond UI work.
 
 ```sh
+./scripts/fetch-runtime.sh   # downloads the pinned 77 MB runtime package
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
+
+`app/src/main/jniLibs/` is gitignored; the fetch script verifies both the
+package and binary SHA-256 before copying. CI caches the result between runs.
 
 CI builds every push and pull request. Releases are built from tags:
 
@@ -59,7 +71,7 @@ Releases. See [docs/RELEASING.md](docs/RELEASING.md) for signing secrets.
 
 | Milestone | What lands |
 |---|---|
-| M1 | Bundled runtime, exec from `nativeLibraryDir`, foreground service |
+| M1 ✅ | Bundled runtime, exec from `nativeLibraryDir`, foreground service |
 | M2 | `bash`, `git`, and `rg` toolchain |
 | M3 | HTTP/SSE client and server state machine |
 | M4 | Sessions, chat, tool approvals, diffs |

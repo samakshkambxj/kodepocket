@@ -36,12 +36,13 @@ Measured on the development device on 2026-11-16, not assumed:
 | Fact | Value |
 |---|---|
 | Device | `arm64-v8a`, Android API 37 |
-| opencode | `v2.2.5`, 240 MB single ELF |
-| Linked libraries | `libc`, `libm`, `libdl` only (JSC linked in) |
+| opencode | `v2.2.5`, 340 MB ELF (77 MB xz package) |
+| Linked libraries | `libc`, `libm`, `libdl`, plus `libopencode-crhandler.so` |
 | Minimum Android | API 28 (binary built for Android 28, NDK r27c) |
-| Server | `opencode serve --port 4199` starts, `/api/info` returns 200 |
+| Interpreter | `/system/bin/linker64`, PIE, Android-compatible |
+| Server | `opencode serve --port N --hostname 127.0.0.1` starts, `/api/info` returns 200 |
 | PTY | `capabilities.persistentPty: true` |
-| Auth | HTTP Basic, username `opencode`, password printed at startup |
+| Auth | HTTP Basic, username `opencode`, password from `OPENCODE_PASSWORD` |
 | Bun | 1.4.4 publishes `bun-linux-aarch64-android` |
 | npm | `opencode-ai` / `@opencode/cli` have **no** Android target |
 
@@ -106,11 +107,12 @@ The trade-off is process lifecycle work, which we need anyway for Android.
 2. Service creates an app-private environment (§5) and picks a free port.
 3. `ProcessBuilder` runs `nativeLibraryDir/libopencode.so serve`.
 4. Password comes from `OPENCODE_PASSWORD` (32 random bytes, base64url).
-5. Poll `GET /api/info` with Basic auth until 200 (timeout 20 s).
+5. Poll `GET /api/info` with Basic auth until 200 (timeout 120 s; the Bun
+   binary is large and cold starts slowly on low-end devices).
 6. Publish `ServerEndpoint(url, password)` on a `StateFlow`.
-7. On stop: `SIGTERM`, wait 3 s, `SIGKILL`; always release the wake lock.
-8. Unexpected exit: restart with capped exponential backoff, surface a
-   persistent notification with the failure reason.
+7. On stop: `SIGTERM`, wait 5 s, `SIGKILL`; always release the wake lock.
+8. Unexpected exit: surface the failure and the log tail. Automatic restart
+   with backoff lands in M7.
 
 ---
 
@@ -120,10 +122,15 @@ The trade-off is process lifecycle work, which we need anyway for Android.
   Android only executes from `nativeLibraryDir`; `filesDir` is blocked by W^X
   since Android 10.
 - `android:extractNativeLibs="true"` and `useLegacyPackaging = true`.
-- `scripts/fetch-runtime.sh` downloads pinned artifacts and verifies SHA-256
-  from `runtime.lock`. CI fails on mismatch.
+- The runtime has a second ELF, `libopencode-crhandler.so`, loaded through a
+  relative `RUNPATH` (`$ORIGIN/../lib/opencode`). Both files ship in
+  `jniLibs`; the supervisor sets `LD_LIBRARY_PATH` to `nativeLibraryDir` so the
+  linker finds the helper.
+- `scripts/fetch-runtime.sh` downloads the pinned package, verifies the
+  tarball and binary SHA-256, and installs both files. CI runs it before every
+  build and caches the result.
 - `OPENCODE_DISABLE_AUTOUPDATE=1`; updates ship as APKs.
-- Version shown in **About** and in the health-check result.
+- Version shown on the home screen and in the health-check result.
 
 Initial runtime source: vendor the community bionic build
 ([Hope2333/opencode-termux](https://github.com/Hope2333/opencode-termux),
@@ -144,7 +151,9 @@ All paths under app-private storage, created on first run:
 | `XDG_DATA_HOME` | `files/home/.local/share` |
 | `OPENCODE_CONFIG_DIR` | `files/home/.config/opencode` |
 | `OPENCODE_DB` | `files/home/.local/share/opencode/opencode.db` |
-| `SSL_CERT_FILE` | app-provided CA bundle |
+| `OPENCODE_PASSWORD` | 32 random bytes, base64url, regenerated per start |
+| `LD_LIBRARY_PATH` | `nativeLibraryDir` (resolves the runtime helper) |
+| `SSL_CERT_FILE` | app-provided CA bundle (M2) |
 | `PATH` | bundled `bin` + `/system/bin` |
 | `LANG` | `en_US.UTF-8` |
 | `TERM` | `xterm-256color` |
@@ -167,11 +176,15 @@ Gradle wrapper, `libs.versions.toml`, empty module graph, CI running
 
 ### M1 — Exec spike (go/no-go)
 
-**Deliverables:** `:runtime` supervisor + minimal Compose screen that starts
-the server, shows `/api/info`, and stops it. Foreground service, wake lock,
-notification, `OPENCODE_PASSWORD`, free-port selection.
-**Acceptance:** cold start → version visible in < 5 s; survives 15 min with the
-screen off; stop leaves no child process; no ANR.
+**Status:** implemented in `app/src/main/java/dev/kodepocket/runtime/` and
+`scripts/fetch-runtime.sh`; device verification is the remaining acceptance
+step.
+
+**Deliverables:** runtime supervisor + Compose screen that starts the server,
+shows `/api/info`, and stops it. Foreground service, wake lock, notification,
+`OPENCODE_PASSWORD`, free-port selection.
+**Acceptance:** cold start → version visible within 30 s on a mid-range phone;
+survives 15 min with the screen off; stop leaves no child process; no ANR.
 **Retires:** R1, R4.
 
 ### M2 — Toolchain bootstrap
@@ -247,7 +260,7 @@ download step; the app structure is unchanged.
 |---|---|---|---|
 | R1 | W^X blocks exec | Fatal | `jniLibs` + `extractNativeLibs`; proven in M1 before building UI |
 | R2 | Missing CLI tools break agent | High | Bundle `bash`/`git`/`rg`; smoke tests in M2 |
-| R3 | Binary is ~240 MB | High | APK splits, asset delivery, expect ~100 MB download |
+| R3 | Binary is ~340 MB | High | APK splits, asset delivery, expect ~100 MB download |
 | R4 | Doze kills long runs | High | FGS + wake lock + battery prompt; M1 soak test |
 | R5 | Localhost is shared by all apps | High | Random password per launch, loopback bind, no logging |
 | R6 | JSC/WebKit LGPL static linking | Medium | Legal review; provide relinkable objects or written offer |
@@ -267,17 +280,17 @@ download step; the app structure is unchanged.
 - One logical change per commit. No mixed refactors. No WIP commits on `main`.
 - Subject ≤ 72 chars, body explains *why* not *what*.
 - Every commit builds and passes `./gradlew check`.
-- Trunk-based: short-lived branches, squash-merge PRs, linear history.
+- Trunk-based: commit straight to `main`; no pull requests.
 - Tags: `v0.1.0-alpha.1`, `v0.1.0`, annotated and signed when signing is set up.
 
 Example sequence for M1:
 
 ```
 feat(runtime): execute bundled server from nativeLibraryDir
-feat(runtime): supervise server process with restart backoff
+feat(runtime): supervise the server process and probe /api/info
 feat(app): add foreground service for the local server
 feat(ui): show server health and version
-test(runtime): cover supervisor state transitions
+test(runtime): cover endpoint auth and port parsing
 ```
 
 ---
