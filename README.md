@@ -11,9 +11,10 @@ no PRoot, no remote server.
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
-> **Status:** M1. The app bundles the opencode runtime, executes it from
-> `nativeLibraryDir`, and supervises it with a foreground service. Chat and
-> tool approvals are the next milestones.
+> **Status:** M2. The app bundles the opencode runtime and a full shell
+> toolchain (bash, busybox, git, ripgrep, curl), executes both from
+> `nativeLibraryDir`, and supervises the server with a foreground service.
+> Chat and tool approvals are the next milestones.
 
 ## Why
 
@@ -40,6 +41,17 @@ The runtime also needs a small helper (`libopencode-crhandler.so`). Both ELFs
 are extracted from `jniLibs`, and the supervisor points `LD_LIBRARY_PATH` at
 `nativeLibraryDir` so the linker resolves the helper.
 
+The agent is useless without a shell, so the APK also carries a Termux
+toolchain. Its aarch64 packages are plain bionic ELFs and run unchanged on
+Android. They ship as `libkp_*.so` files and their shared libraries under
+sanitized `lib*.so` names, and at startup the app builds three symlink farms in
+`files/toolchain` — `bin`, `lib`, and `libexec/git-core` — that point back into
+`nativeLibraryDir`. Because SELinux lets an app execute (`execute_no_trans`)
+files on `apk_data_file`, a link such as `bin/bash` runs the real bash. That
+gives the agent `bash`, bash-compatible builtins, 160 busybox applets, `git`
+with its subcommands and HTTPS transport, `ripgrep`, and `curl`, all offline,
+inside the app sandbox.
+
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture, milestones, risks,
 and commit conventions.
 
@@ -47,25 +59,28 @@ and commit conventions.
 
 Grab the newest APK from
 [Releases](https://github.com/samakshkambxj/kodepocket/releases). It is built
-for arm64 devices on Android 9 and newer, and it is about 110 MB because the
-runtime ships inside the APK.
+for arm64 devices on Android 9 and newer, and it is about 120 MB because the
+runtime and the developer tools ship inside the APK.
 
 Alphas before `v0.1.0-alpha.4` were signed with a throwaway debug key. If you
 installed one, uninstall it first; releases from `.4` on upgrade in place.
 
 ## Build
 
-Requirements: JDK 17+, Android SDK 37, `curl`, `xz`, and an arm64 device for
-anything beyond UI work.
+Requirements: JDK 17+, Android SDK 37, `curl`, `ar`, `xz`, and an arm64 device
+for anything beyond UI work.
 
 ```sh
-./scripts/fetch-runtime.sh   # downloads the pinned 77 MB runtime package
+./scripts/fetch-runtime.sh     # pinned 77 MB opencode package
+./scripts/fetch-toolchain.sh   # pinned Termux packages for bash/git/rg
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-`app/src/main/jniLibs/` is gitignored; the fetch script verifies both the
-package and binary SHA-256 before copying. CI caches the result between runs.
+`app/src/main/jniLibs/` and `app/src/main/assets/toolchain/` are gitignored. The
+fetch scripts verify every download against a pinned SHA-256 before installing,
+and write the manifest the app reads at startup. CI caches both directories
+between runs, keyed on the scripts and the busybox applet list.
 
 CI builds every push and pull request. Releases are built from tags:
 
@@ -82,7 +97,7 @@ Releases. See [docs/RELEASING.md](docs/RELEASING.md) for signing secrets.
 | Milestone | What lands |
 |---|---|
 | M1 ✅ | Bundled runtime, exec from `nativeLibraryDir`, foreground service |
-| M2 | `bash`, `git`, and `rg` toolchain |
+| M2 ✅ | `bash`, `git`, and `rg` toolchain |
 | M3 | HTTP/SSE client and server state machine |
 | M4 | Sessions, chat, tool approvals, diffs |
 | M5–M6 | Workspaces and terminal |

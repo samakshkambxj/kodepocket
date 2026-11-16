@@ -152,9 +152,15 @@ All paths under app-private storage, created on first run:
 | `OPENCODE_CONFIG_DIR` | `files/home/.config/opencode` |
 | `OPENCODE_DB` | `files/home/.local/share/opencode/opencode.db` |
 | `OPENCODE_PASSWORD` | 32 random bytes, base64url, regenerated per start |
-| `LD_LIBRARY_PATH` | `nativeLibraryDir` (resolves the runtime helper) |
-| `SSL_CERT_FILE` | app-provided CA bundle (M2) |
-| `PATH` | bundled `bin` + `/system/bin` |
+| `PATH` | `files/toolchain/bin` + `nativeLibraryDir` + `/system/bin` |
+| `LD_LIBRARY_PATH` | `files/toolchain/lib` + `nativeLibraryDir` |
+| `SHELL` | `files/toolchain/bin/bash` |
+| `TERMINFO` | `files/toolchain/share/terminfo` |
+| `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO` | `files/toolchain/etc/tls/cert.pem` |
+| `GIT_EXEC_PATH` | `files/toolchain/libexec/git-core` |
+| `GIT_TEMPLATE_DIR` | `files/toolchain/share/git-core/templates` |
+| `GIT_PAGER`, `PAGER` | `cat` (a pager inside a PTY would block) |
+| `GIT_TERMINAL_PROMPT` | `0` |
 | `LANG` | `en_US.UTF-8` |
 | `TERM` | `xterm-256color` |
 
@@ -189,10 +195,25 @@ survives 15 min with the screen off; stop leaves no child process; no ANR.
 
 ### M2 — Toolchain bootstrap
 
-**Deliverables:** bundle `bash`, `git`, `rg`; first-run extraction; env
-contract; CA bundle; shebang/tmp fixes borrowed from the Termux projects.
+**Status:** implemented in `scripts/fetch-toolchain.sh`, `runtime/Toolchain.kt`
+and the self-check on the home screen; device verification is the remaining
+acceptance step.
+
+**Deliverables:** bundle `bash`, `busybox`, `git`, `rg`, `curl` with their
+shared libraries; first-run symlink farm; env contract; CA bundle and terminfo.
 **Acceptance:** an agent session can `rg` across the workspace, edit files, and
 run `git diff`; failures surface as readable tool errors, not crashes.
+
+**How it ships.** Termux's aarch64 packages are plain bionic ELFs, so they run
+unchanged on Android. `scripts/fetch-toolchain.sh` pins 20 packages by version
+and SHA-256, installs the executables as `libkp_*.so` and the libraries under
+sanitized `lib*.so` names into `jniLibs`, and writes
+`assets/toolchain/manifest.json` plus the CA bundle, terminfo database and git
+templates. At startup `Toolchain` rebuilds three symlink farms in
+`files/toolchain`: `bin` (tools and busybox applets), `lib` (sonames the linker
+asks for) and `libexec/git-core` (git's subcommands). Executing a symlink
+resolves to `nativeLibraryDir`, where SELinux grants `execute_no_trans` on
+`apk_data_file` to app domains. The pack grows the APK by roughly 12 MB.
 
 ### M3 — Client
 
