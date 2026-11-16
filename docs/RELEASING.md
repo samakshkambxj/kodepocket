@@ -10,7 +10,8 @@ release needs a private key. Create one once and keep it out of the repository:
 
 ```sh
 keytool -genkeypair -v \
-  -keystore kodepocket-release.jks \
+  -keystore kodepocket-release.p12 \
+  -storetype PKCS12 \
   -alias kodepocket \
   -keyalg RSA -keysize 4096 -validity 10000
 ```
@@ -18,16 +19,19 @@ keytool -genkeypair -v \
 Store it and its passwords as repository secrets:
 
 ```sh
-base64 -w0 kodepocket-release.jks | gh secret set KODEPOCKET_KEYSTORE_BASE64
+base64 -w0 kodepocket-release.p12 | gh secret set KODEPOCKET_KEYSTORE_BASE64
 gh secret set KODEPOCKET_KEYSTORE_PASSWORD
 gh secret set KODEPOCKET_KEY_ALIAS
 gh secret set KODEPOCKET_KEY_PASSWORD
 ```
 
-`KODEPOCKET_KEY_ALIAS` is the `-alias` value above (`kodepocket`).
+`KODEPOCKET_KEY_ALIAS` is the `-alias` value above (`kodepocket`). The
+keystore must be PKCS#12; the build reads it as such. Both passwords may be
+the same.
 
 Back up the keystore somewhere safe. Losing it means existing installs cannot
-be updated in place.
+be updated in place. Installations signed with the old debug fallback must be
+uninstalled once.
 
 ## 2. Version
 

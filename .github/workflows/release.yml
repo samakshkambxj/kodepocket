@@ -46,8 +46,8 @@ jobs:
       - name: Prepare signing key
         if: env.KEYSTORE_BASE64 != ''
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kodepocket.jks"
-          echo "KODEPOCKET_KEYSTORE=$RUNNER_TEMP/kodepocket.jks" >> "$GITHUB_ENV"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kodepocket.p12"
+          echo "KODEPOCKET_KEYSTORE=$RUNNER_TEMP/kodepocket.p12" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:
