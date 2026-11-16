@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +66,7 @@ import dev.kodepocket.runtime.RuntimeService
 import dev.kodepocket.runtime.RuntimeState
 import dev.kodepocket.ui.theme.KodePocketTheme
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +90,22 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showDetails by rememberSaveable { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+    var toolCheck by remember { mutableStateOf<ToolCheck>(ToolCheck.Idle) }
+    val onCheckTools: () -> Unit = {
+        if (toolCheck !is ToolCheck.Running) {
+            toolCheck = ToolCheck.Running
+            scope.launch {
+                val result = supervisor?.checkToolchain()
+                    ?: Result.failure(IllegalStateException("The runtime is not initialized."))
+                toolCheck = result.fold(
+                    onSuccess = { ToolCheck.Done(true, it) },
+                    onFailure = { ToolCheck.Done(false, it.message.orEmpty()) },
+                )
+            }
+        }
+    }
 
     val onStart: () -> Unit = {
         val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -141,6 +159,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     onStop = onStop,
                 )
             }
+            item { ToolchainCard(check = toolCheck, onRun = onCheckTools) }
             item { RoadmapCard() }
             item { Footnote(profile) }
         }
@@ -411,6 +430,98 @@ private fun InfoRow(label: String, value: String) {
 }
 
 @Composable
+private fun ToolchainCard(check: ToolCheck, onRun: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = "Developer tools",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "bash, git, ripgrep, curl and busybox ship in the APK and " +
+                    "run on the phone, so the agent can build, search and commit " +
+                    "without a PC or Termux.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ToolPill("bash")
+                ToolPill("git")
+                ToolPill("ripgrep")
+                ToolPill("busybox")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = onRun,
+                enabled = check !is ToolCheck.Running,
+            ) {
+                if (check is ToolCheck.Running) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Checking…")
+                } else {
+                    Text("Run self-check")
+                }
+            }
+
+            val done = check as? ToolCheck.Done
+            if (done != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (done.ok) {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    } else {
+                        MaterialTheme.colorScheme.errorContainer
+                    },
+                    contentColor = if (done.ok) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    },
+                ) {
+                    Text(
+                        text = done.text.ifBlank { "No output." },
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolPill(label: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
+@Composable
 private fun RoadmapCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -428,8 +539,9 @@ private fun RoadmapCard() {
                 style = MaterialTheme.typography.titleMedium,
             )
             Step(1, "Bundle the runtime", "Execute opencode inside the app sandbox", "M1 · done")
-            Step(2, "Chat and approvals", "Sessions, streaming, diffs, tools", "M3–M4")
-            Step(3, "First public release", "Signed APK and F-Droid metadata", "M8")
+            Step(2, "Shell out", "bash, git, ripgrep and busybox on device", "M2 · done")
+            Step(3, "Chat and approvals", "Sessions, streaming, diffs, tools", "M3–M4")
+            Step(4, "First public release", "Signed APK and F-Droid metadata", "M8")
         }
     }
 }
@@ -481,6 +593,12 @@ private fun Footnote(profile: DeviceProfile) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
     )
+}
+
+private sealed interface ToolCheck {
+    data object Idle : ToolCheck
+    data object Running : ToolCheck
+    data class Done(val ok: Boolean, val text: String) : ToolCheck
 }
 
 private data class DeviceProfile(
