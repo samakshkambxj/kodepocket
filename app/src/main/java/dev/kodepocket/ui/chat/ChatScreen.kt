@@ -84,6 +84,7 @@ import dev.kodepocket.server.SessionInfo
 fun ChatScreen(
     state: ChatState,
     runtime: RuntimeState,
+    bottomInset: Dp = 0.dp,
     onOpenRuntime: () -> Unit,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
@@ -146,6 +147,7 @@ fun ChatScreen(
                 Composer(
                     state = state,
                     runtime = runtime,
+                    bottomInset = bottomInset,
                     draft = draft,
                     onDraftChange = { draft = it },
                     onSend = {
@@ -534,6 +536,7 @@ private fun EmptyChat(onSend: (String) -> Unit) {
 private fun Composer(
     state: ChatState,
     runtime: RuntimeState,
+    bottomInset: Dp,
     draft: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -543,7 +546,10 @@ private fun Composer(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .imePadding(),
+            .imePadding()
+            // The inset lives outside the surface so the floating navigation
+            // bar hovers over the page background instead of the composer.
+            .padding(bottom = bottomInset),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(

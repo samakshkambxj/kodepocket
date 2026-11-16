@@ -70,7 +70,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
+) {
     val context = LocalContext.current
     val supervisor = (context.applicationContext as? KodePocketApplication)?.supervisor
     val profile = rememberDeviceProfile()
@@ -143,7 +146,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                 start = 20.dp,
                 end = 20.dp,
                 top = 8.dp,
-                bottom = 32.dp,
+                bottom = 32.dp + bottomInset,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
