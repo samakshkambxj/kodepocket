@@ -259,6 +259,7 @@ private fun RuntimeCard(
                         text = state.message
                             .lineSequence()
                             .filter { it.isNotBlank() }
+                            .toList()
                             .takeLast(8)
                             .joinToString("\n"),
                         modifier = Modifier.padding(12.dp),

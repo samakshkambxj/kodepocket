@@ -79,6 +79,7 @@ class RuntimeEnvironment(private val context: Context) {
             bytes.toString(Charsets.UTF_8)
                 .lineSequence()
                 .filter { it.isNotBlank() }
+                .toList()
                 .takeLast(maxLines)
                 .joinToString("\n")
         }.getOrDefault("")
