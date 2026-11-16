@@ -63,6 +63,13 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // The opencode binary is shipped as libopencode.so. Legacy
+            // packaging extracts it to nativeLibraryDir, the only app-owned
+            // path Android 10+ lets the app execute.
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libopencode*.so"
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -84,6 +91,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.kotlinx.coroutines.android)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
