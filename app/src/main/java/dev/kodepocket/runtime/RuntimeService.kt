@@ -79,7 +79,7 @@ class RuntimeService : Service() {
         scope.launch {
             supervisor.state.collect { render(it) }
         }
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             supervisor.start()
         }
     }
