@@ -195,9 +195,9 @@ survives 15 min with the screen off; stop leaves no child process; no ANR.
 
 ### M2 — Toolchain bootstrap
 
-**Status:** implemented in `scripts/fetch-toolchain.sh`, `runtime/Toolchain.kt`
-and the self-check on the home screen; device verification is the remaining
-acceptance step.
+**Status:** shipped in `v0.1.0-alpha.5` and verified on device: the self-check
+reports bash 5.3.20, git 2.56.1, ripgrep 15.2.0, busybox 1.38.0 and curl 8.23.0
+from the symlink farm.
 
 **Deliverables:** bundle `bash`, `busybox`, `git`, `rg`, `curl` with their
 shared libraries; first-run symlink farm; env contract; CA bundle and terminfo.
