@@ -43,6 +43,16 @@ are extracted from `jniLibs`, and the supervisor points `LD_LIBRARY_PATH` at
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture, milestones, risks,
 and commit conventions.
 
+## Install
+
+Grab the newest APK from
+[Releases](https://github.com/samakshkambxj/kodepocket/releases). It is built
+for arm64 devices on Android 9 and newer, and it is about 110 MB because the
+runtime ships inside the APK.
+
+Alphas before `v0.1.0-alpha.4` were signed with a throwaway debug key. If you
+installed one, uninstall it first; releases from `.4` on upgrade in place.
+
 ## Build
 
 Requirements: JDK 17+, Android SDK 37, `curl`, `xz`, and an arm64 device for

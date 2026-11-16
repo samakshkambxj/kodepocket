@@ -59,7 +59,26 @@ Verify a download with:
 sha256sum -c SHA256SUMS.txt
 ```
 
-## 4. F-Droid
+## 4. Verify the signature
+
+Every release from `v0.1.0-alpha.4` on is signed with the project key:
+
+```
+subject: CN=KodePocket, OU=Release, O=KodePocket, L=Internet, ST=Internet, C=IN
+SHA-256: C4:54:CE:0E:2C:C9:FE:18:78:08:E4:B7:4E:F7:0A:59:FC:16:19:4A:7C:34:D5:7D:9C:1B:4A:14:64:7F:58:72
+```
+
+Check an APK against it with `apksigner` from the Android build tools:
+
+```sh
+apksigner verify --print-certs kodepocket-<version>.apk
+```
+
+The certificate fingerprint must match the value above. Alpha builds before
+`.4` used a throwaway debug key, so they cannot be updated in place and must
+be uninstalled once.
+
+## 5. F-Droid
 
 F-Droid builds from source and signs with its own key. Requirements once the
 runtime lands:
