@@ -1,6 +1,10 @@
 package dev.kodepocket.ui.home
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -22,11 +26,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -44,18 +52,56 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.kodepocket.BuildConfig
+import dev.kodepocket.KodePocketApplication
+import dev.kodepocket.runtime.RuntimeEndpoint
+import dev.kodepocket.runtime.RuntimeService
+import dev.kodepocket.runtime.RuntimeState
 import dev.kodepocket.ui.theme.KodePocketTheme
+import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val supervisor = (context.applicationContext as? KodePocketApplication)?.supervisor
     val profile = rememberDeviceProfile()
+
+    val stateFlow = supervisor?.state ?: flowOf<RuntimeState>(RuntimeState.Idle)
+    val endpointFlow = supervisor?.endpoint ?: flowOf<RuntimeEndpoint?>(null)
+    val state by stateFlow.collectAsStateWithLifecycle(initialValue = RuntimeState.Idle)
+    val endpoint by endpointFlow.collectAsStateWithLifecycle(initialValue = null)
+
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        // A denied notification permission hides the ongoing card, but the
+        // foreground service and the local server still run.
+        RuntimeService.start(context)
+    }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showDetails by rememberSaveable { mutableStateOf(false) }
+
+    val onStart: () -> Unit = {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            RuntimeService.start(context)
+        }
+    }
+    val onStop: () -> Unit = { RuntimeService.stop(context) }
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -85,10 +131,14 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         ) {
             item { HeroCard() }
             item {
-                DeviceCard(
+                RuntimeCard(
+                    state = state,
+                    endpoint = endpoint,
                     profile = profile,
                     expanded = showDetails,
                     onToggleDetails = { showDetails = !showDetails },
+                    onStart = onStart,
+                    onStop = onStop,
                 )
             }
             item { RoadmapCard() }
@@ -149,10 +199,14 @@ private fun Pill(label: String) {
 }
 
 @Composable
-private fun DeviceCard(
+private fun RuntimeCard(
+    state: RuntimeState,
+    endpoint: RuntimeEndpoint?,
     profile: DeviceProfile,
     expanded: Boolean,
     onToggleDetails: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -163,47 +217,104 @@ private fun DeviceCard(
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.tertiary),
-                )
+                StatusDot(state)
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Runtime not installed",
+                        text = runtimeTitle(state),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = "The bundled opencode binary arrives in milestone M1.",
+                        text = runtimeSubtitle(state, profile),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(16.dp))
+            if (state is RuntimeState.Starting) {
+                Spacer(modifier = Modifier.height(16.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
 
-            InfoRow(
-                label = "Device",
-                value = if (profile.supportsRuntime) {
-                    "arm64-v8a · supported"
-                } else {
-                    "${profile.abi} · unsupported"
-                },
-            )
-            InfoRow(label = "Android", value = "API ${profile.sdk}")
-            InfoRow(
-                label = "Dynamic color",
-                value = if (profile.supportsDynamicColor) "Available" else "Brand palette",
-            )
+            if (state is RuntimeState.Running) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+                InfoRow("Version", state.version)
+                InfoRow("Loopback", "127.0.0.1:${state.port}")
+                InfoRow("Persistent PTY", if (state.persistentPty) "Supported" else "Not advertised")
+                InfoRow("Auth", if (endpoint == null) "—" else "Basic · device only")
+            }
+
+            if (state is RuntimeState.Failed) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ) {
+                    Text(
+                        text = state.message
+                            .lineSequence()
+                            .filter { it.isNotBlank() }
+                            .takeLast(8)
+                            .joinToString("\n"),
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (state) {
+                    is RuntimeState.Running -> {
+                        FilledTonalButton(onClick = onStop) {
+                            Text("Stop agent")
+                        }
+                    }
+
+                    is RuntimeState.Starting, is RuntimeState.Stopping -> {
+                        Button(onClick = {}, enabled = false) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (state is RuntimeState.Starting) "Starting…" else "Stopping…",
+                            )
+                        }
+                    }
+
+                    else -> {
+                        Button(onClick = onStart, enabled = profile.supportsRuntime) {
+                            Text("Start agent")
+                        }
+                    }
+                }
+            }
+
+            if (!profile.supportsRuntime) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "The bundled runtime requires arm64-v8a.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+
             TextButton(onClick = onToggleDetails) {
-                Text(if (expanded) "Hide details" else "Check this device")
+                Text(if (expanded) "Hide device details" else "Device details")
             }
 
             AnimatedVisibility(
@@ -214,13 +325,23 @@ private fun DeviceCard(
                 exit = fadeOut() + shrinkVertically(),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "Shell build",
-                        style = MaterialTheme.typography.labelLarge,
+                    InfoRow(
+                        label = "Device",
+                        value = if (profile.supportsRuntime) {
+                            "${profile.abi} · supported"
+                        } else {
+                            "${profile.abi} · unsupported"
+                        },
                     )
+                    InfoRow(label = "Android", value = "API ${profile.sdk}")
+                    InfoRow(
+                        label = "Dynamic color",
+                        value = if (profile.supportsDynamicColor) "Available" else "Brand palette",
+                    )
+                    InfoRow(label = "Build", value = profile.versionName)
                     Text(
-                        text = "This build verifies the app shell and theme. The runtime " +
-                            "supervisor, sessions, and tool approvals follow in M1–M4.",
+                        text = "The runtime is unpacked from the APK and executed from " +
+                            "the app's native library directory, so no Termux is involved.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -228,6 +349,43 @@ private fun DeviceCard(
             }
         }
     }
+}
+
+@Composable
+private fun StatusDot(state: RuntimeState) {
+    val color = when (state) {
+        RuntimeState.Idle -> MaterialTheme.colorScheme.outline
+        is RuntimeState.Starting, RuntimeState.Stopping -> MaterialTheme.colorScheme.tertiary
+        is RuntimeState.Running -> MaterialTheme.colorScheme.primary
+        is RuntimeState.Failed -> MaterialTheme.colorScheme.error
+    }
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(color),
+    )
+}
+
+private fun runtimeTitle(state: RuntimeState): String = when (state) {
+    RuntimeState.Idle -> "Runtime stopped"
+    is RuntimeState.Starting -> "Starting runtime…"
+    is RuntimeState.Running -> "opencode running"
+    RuntimeState.Stopping -> "Stopping runtime…"
+    is RuntimeState.Failed -> "Runtime failed"
+}
+
+private fun runtimeSubtitle(state: RuntimeState, profile: DeviceProfile): String = when (state) {
+    RuntimeState.Idle -> if (profile.supportsRuntime) {
+        "The agent runs entirely on this phone."
+    } else {
+        "This device is ${profile.abi}."
+    }
+
+    is RuntimeState.Starting -> "Booting the local server on loopback."
+    is RuntimeState.Running -> "v${state.version} · 127.0.0.1:${state.port}"
+    RuntimeState.Stopping -> "Asking the agent to exit."
+    is RuntimeState.Failed -> "Tap start to retry, or read the log below."
 }
 
 @Composable
@@ -268,7 +426,7 @@ private fun RoadmapCard() {
                 text = "Build roadmap",
                 style = MaterialTheme.typography.titleMedium,
             )
-            Step(1, "Bundle the runtime", "Execute opencode inside the app sandbox", "M1")
+            Step(1, "Bundle the runtime", "Execute opencode inside the app sandbox", "M1 · done")
             Step(2, "Chat and approvals", "Sessions, streaming, diffs, tools", "M3–M4")
             Step(3, "First public release", "Signed APK and F-Droid metadata", "M8")
         }
