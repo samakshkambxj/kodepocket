@@ -56,7 +56,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,7 +72,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    bottomInset: Dp = 0.dp,
+    onOpenChat: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val supervisor = (context.applicationContext as? KodePocketApplication)?.supervisor
@@ -136,6 +135,11 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
+                actions = {
+                    TextButton(onClick = onOpenChat) {
+                        Text("Chat")
+                    }
+                },
             )
         },
     ) { innerPadding ->
@@ -147,7 +151,7 @@ fun HomeScreen(
                 start = 20.dp,
                 end = 20.dp,
                 top = 8.dp,
-                bottom = 32.dp + bottomInset,
+                bottom = 32.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
